@@ -61,13 +61,15 @@ El generador puede identificar:
 - Métodos y constructores.
 - Parámetros y tipos cuando están disponibles.
 - Visibilidad de atributos y métodos.
-- Herencia.
+- Herencia e implementación de interfaces.
 - Asociaciones entre clases.
-- Composición y algunas dependencias.
-- Archivos Python y Java dentro de subdirectorios.
+- Composición y agregación.
+- Dependencias entre clases.
+- Proyectos con archivos Python y Java en distintas carpetas.
+- Clases anidadas y otras estructuras habituales de los proyectos.
 - Exclusión de archivos o carpetas que no quieras analizar.
 
-También intenta mantener el diagrama ordenado y ajustar el tamaño de las clases según la información que contienen.
+El programa también intenta organizar automáticamente el diagrama para que sea más fácil de leer, incluso cuando el proyecto contiene muchas clases.
 
 ---
 
@@ -78,7 +80,7 @@ También intenta mantener el diagrama ordenado y ajustar el tamaño de las clase
 Necesitas:
 
 - **Python 3.10 o superior**.
-- **CairoSVG** para generar el PNG desde Python.
+- **CairoSVG** para generar el PNG.
 
 Puedes instalar CairoSVG con:
 
@@ -114,6 +116,12 @@ python3 uml_excalidraw.py /ruta/a/tu/proyecto
 py .\uml_excalidraw.py C:\ruta\a\tu\proyecto
 ```
 
+También puedes analizar la carpeta actual:
+
+```bash
+python3 uml_excalidraw.py .
+```
+
 Por ejemplo:
 
 ```bash
@@ -129,7 +137,7 @@ El programa buscará automáticamente los archivos:
 
 dentro de la carpeta indicada.
 
-Al terminar, tendrás un archivo PNG con el diagrama y podrás elegir si también quieres guardar una versión editable para Excalidraw.
+Al terminar, tendrás un archivo PNG con el diagrama. El programa también te preguntará si quieres guardar una versión editable para Excalidraw.
 
 ---
 
@@ -169,12 +177,34 @@ Puedes indicarle al programa que ignore determinadas rutas:
 python3 uml_excalidraw.py ./mi_proyecto --exclude 'tests/*'
 ```
 
-También puedes usar varias exclusiones:
+También puedes utilizar varias exclusiones:
 
 ```bash
 python3 uml_excalidraw.py ./mi_proyecto \
     --exclude 'tests/*' \
     --exclude '**/test_*.py'
+```
+
+## Ocultar dependencias
+
+Cuando el diagrama tenga demasiadas conexiones, puedes ocultar las dependencias:
+
+```bash
+python3 uml_excalidraw.py ./mi_proyecto --no-dependencies
+```
+
+## Guardar o no guardar el archivo de Excalidraw automáticamente
+
+Para generar siempre el archivo editable sin preguntar:
+
+```bash
+python3 uml_excalidraw.py ./mi_proyecto --excalidraw
+```
+
+Para no generarlo:
+
+```bash
+python3 uml_excalidraw.py ./mi_proyecto --no-excalidraw
 ```
 
 ## Ver todas las opciones
@@ -319,7 +349,7 @@ La relación indica que `Administrador` hereda de `Usuario`.
 
 ### Asociación
 
-Puede aparecer cuando una clase utiliza otra como parte de sus atributos o tipos.
+Puede aparecer cuando una clase utiliza otra en sus atributos o tipos.
 
 Ejemplo:
 
@@ -330,7 +360,7 @@ class Pedido:
 
 ### Composición
 
-Puede detectarse en situaciones donde una clase crea directamente una instancia de otra.
+Puede detectarse cuando una clase crea directamente una instancia de otra.
 
 Ejemplo:
 
@@ -338,11 +368,15 @@ Ejemplo:
 self.cliente = Cliente()
 ```
 
+### Agregación
+
+Puede aparecer cuando una clase recibe o utiliza una instancia de otra clase sin crearla directamente.
+
 ### Dependencia
 
-Puede aparecer cuando una clase utiliza otra en parámetros, retornos o determinadas expresiones del código.
+Puede aparecer cuando una clase utiliza otra en parámetros, retornos o determinadas partes del código.
 
-> La detección de relaciones se basa en la información disponible en el código fuente, por lo que no todas las relaciones posibles de un proyecto pueden identificarse.
+> La detección de relaciones depende de la información disponible en el código fuente, por lo que no todas las relaciones posibles de un proyecto pueden identificarse.
 
 ---
 
@@ -385,7 +419,7 @@ El programa puede tener dificultades con código muy dinámico o con relaciones 
 
 ## Java
 
-El soporte Java utiliza un análisis ligero, por lo que algunas construcciones especialmente complejas pueden no reconocerse correctamente.
+Algunas construcciones especialmente complejas pueden no reconocerse correctamente.
 
 En proyectos grandes o con código muy complejo, puede ser necesario **revisar el diagrama generado y realizar algunos ajustes manuales**.
 
@@ -396,14 +430,14 @@ En proyectos grandes o con código muy complejo, puede ser necesario **revisar e
 <details>
 <summary><strong>¿Necesito ejecutar el proyecto que quiero analizar?</strong></summary>
 
-No. El generador analiza los archivos fuente y no necesita iniciar el proyecto para obtener la información básica de las clases.
+No. El generador analiza los archivos fuente y no necesita iniciar el proyecto para obtener la información de las clases.
 
 </details>
 
 <details>
 <summary><strong>¿Puedo utilizarlo con proyectos que tengan muchas carpetas?</strong></summary>
 
-Sí. El programa busca recursivamente archivos `.py` y `.java` dentro de la carpeta que indiques.
+Sí. El programa busca archivos `.py` y `.java` dentro de la carpeta que indiques y también puede ignorar las carpetas que no quieras analizar.
 
 </details>
 
@@ -422,9 +456,9 @@ Sí. Además del PNG, puedes generar un archivo `.excalidraw` y continuar editá
 </details>
 
 <details>
-<summary><strong>¿El resultado siempre será exactamente igual al UML que haría una persona?</strong></summary>
+<summary><strong>¿Puedo usarlo aunque el proyecto tenga clases muy complejas?</strong></summary>
 
-No necesariamente. El programa intenta deducir la estructura y relaciones a partir del código disponible. Por eso conviene revisar el resultado, especialmente en proyectos complejos.
+Sí, aunque en proyectos especialmente grandes o complejos conviene revisar el resultado final y hacer ajustes manuales cuando sea necesario.
 
 </details>
 
