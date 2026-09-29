@@ -7,7 +7,7 @@ Puedes obtener:
 - 🖼️ **PNG** para visualizar o compartir fácilmente.
 - ✏️ **`.excalidraw`** para abrir y editar el diagrama en [Excalidraw](https://excalidraw.com/).
 
-![Ejemplo de diagrama UML generado](assets/uml_class_diagram.png)
+![Ejemplo de diagrama UML generado](uml_class_diagram.png)
 
 ---
 
