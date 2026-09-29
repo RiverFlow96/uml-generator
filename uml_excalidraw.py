@@ -46,9 +46,18 @@ IGNORE_DIRS = {
     "site-packages",
 }
 
+IGNORE_JAVA_CLASSES = {
+    "Main",
+}
+
+# Tipos de la biblioteca estándar que no queremos representar como dependencias UML.
+IGNORE_JAVA_TYPES = {
+    "Scanner",
+}
+
 BOX_MIN_WIDTH = 320
 BOX_MAX_WIDTH = 520
-CHAR_WIDTH = 8.0
+CHAR_WIDTH = 9.0
 LINE_HEIGHT = 24
 HEADER_HEIGHT = 62
 BODY_PADDING = 14
@@ -309,11 +318,21 @@ class ProjectAnalyzer:
         if not declarations:
             return
 
+        # Excluir clases Java que no queremos representar en el UML.
+        declarations = [
+            decl
+            for decl in declarations
+            if not (decl["kind"] == "class" and decl["name"] in IGNORE_JAVA_CLASSES)
+        ]
+
+        if not declarations:
+            return
+
         # Determina clases anidadas mediante el intervalo de llaves más pequeño que las contiene.
         for decl in declarations:
             parents = [
                 other for other in declarations
-                if other is not decl and other["open"] < decl["start"] < decl["close"]
+                if other["open"] < decl["start"] < other["close"]
             ]
             parent = min(parents, key=lambda d: d["close"] - d["open"]) if parents else None
             decl["parent"] = parent
@@ -389,7 +408,9 @@ class ProjectAnalyzer:
             elif ch == ";" and paren == 0 and bracket == 0:
                 prefix = source[member_start:i].strip()
                 masked_prefix = masked[member_start:i].strip()
-                if "(" in masked_prefix:
+                # Una declaración con "=" es un campo inicializado, aunque
+                # su valor contenga una llamada como Scanner(System.in).
+                if "(" in masked_prefix and "=" not in masked_prefix:
                     self._parse_java_method(info, source, masked_prefix, "")
                 elif prefix:
                     self._parse_java_fields(info, prefix)
@@ -410,7 +431,9 @@ class ProjectAnalyzer:
 
         # Dependencias por creación de objetos dentro de la clase.
         for match in re.finditer(r'\bnew\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)', body_text):
-            info.used_types.add(self._java_type_name(match.group(1)))
+            target = self._java_type_name(match.group(1))
+            if target not in IGNORE_JAVA_TYPES:
+                info.used_types.add(target)
 
         info.fields.sort(key=lambda f: (f.name.lower(), f.name))
         info.methods.sort(key=lambda m: (m.name not in {"__init__", info.name}, m.name.lower()))
@@ -436,6 +459,16 @@ class ProjectAnalyzer:
             return
         type_name, first_name, first_default = first.groups()
         type_name = self._java_type_name(type_name)
+
+        # No representar la inicialización estándar de entrada por consola.
+        # Ejemplo: Scanner scanner = new Scanner(System.in);
+        if (
+            type_name == "Scanner"
+            and first_default
+            and re.search(r"\bnew\s+Scanner\s*\(", first_default)
+        ):
+            return
+
         for idx, part in enumerate(parts):
             if idx == 0:
                 name, default = first_name, first_default
@@ -461,7 +494,8 @@ class ProjectAnalyzer:
                     info.field_relations.append((name, target, "composition"))
                     info.used_types.add(target)
             for type_name_ref in self._type_names(type_name):
-                info.used_types.add(type_name_ref)
+                if type_name_ref not in IGNORE_JAVA_TYPES:
+                    info.used_types.add(type_name_ref)
 
     def _parse_java_method(self, info: ClassInfo, source: str, signature: str, body: str) -> None:
         signature = self._java_strip_annotations(signature)
@@ -483,7 +517,8 @@ class ProjectAnalyzer:
         cleaned_mods = re.sub(r'<[^<>]*>', ' ', modifiers)
         cleaned_mods = re.sub(r'\b(public|protected|private|static|final|abstract|synchronized|native|strictfp|default|sealed|non-sealed|transient|volatile)\b', ' ', cleaned_mods)
         cleaned_mods = " ".join(cleaned_mods.split())
-        return_type = "None" if name == info.name else (cleaned_mods or "Any")
+        # Los constructores no tienen tipo de retorno en UML.
+        return_type = "" if name == info.name else (cleaned_mods or "Any")
         params = self._format_java_parameters(params_text)
         method = MethodInfo(
             name=name,
@@ -500,7 +535,9 @@ class ProjectAnalyzer:
         for type_name in self._type_names(return_type):
             info.used_types.add(type_name)
         for match in re.finditer(r'\bnew\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)', body):
-            info.used_types.add(self._java_type_name(match.group(1)))
+            target = self._java_type_name(match.group(1))
+            if target not in IGNORE_JAVA_TYPES:
+                info.used_types.add(target)
 
     def _format_java_parameters(self, params_text: str) -> list[str]:
         if not params_text.strip():
@@ -708,7 +745,8 @@ class ProjectAnalyzer:
         is_property = "property" in decorators
 
         params = self._format_parameters(fn.args)
-        ret = self._format_annotation(fn.returns) if fn.returns else "None"
+        # __init__ es un constructor y no muestra tipo de retorno en UML.
+        ret = "" if name == "__init__" else (self._format_annotation(fn.returns) if fn.returns else "None")
         if ret == "Any":
             ret = "Any"
 
@@ -902,28 +940,60 @@ class ExcalidrawBuilder:
         }
 
     def _layout_boxes(self) -> None:
-        infos = sorted(self.classes.values(), key=lambda c: (len(c.fields) + len(c.methods), c.name), reverse=True)
+        infos = sorted(
+            self.classes.values(),
+            key=lambda c: (len(c.fields) + len(c.methods), c.name),
+            reverse=True,
+        )
         n = len(infos)
         if n == 0:
             self.width, self.height = 800, 500
             return
-        columns = max(1, min(4, math.ceil(math.sqrt(n))))
-        col_heights = [CANVAS_MARGIN] * columns
-        col_x = [CANVAS_MARGIN + i * (BOX_MAX_WIDTH + HORIZONTAL_GAP) for i in range(columns)]
-        max_right = 0
-        max_bottom = 0
 
-        for index, info in enumerate(infos):
-            row_col = min(range(columns), key=lambda i: col_heights[i])
-            width = self._box_width(info)
-            height = self._box_height(info)
-            x = col_x[row_col]
-            y = col_heights[row_col]
+        columns = max(1, min(4, math.ceil(math.sqrt(n))))
+
+        # Calculamos primero el tamaño real de cada caja según su contenido.
+        sizes = {
+            info.qualname: (self._box_width(info), self._box_height(info))
+            for info in infos
+        }
+
+        # Repartimos las clases por columnas buscando equilibrar su altura total.
+        col_heights = [CANVAS_MARGIN] * columns
+        assignments: list[tuple[ClassInfo, int]] = []
+        column_widths = [0.0] * columns
+
+        for info in infos:
+            col = min(range(columns), key=lambda i: col_heights[i])
+            width, height = sizes[info.qualname]
+            assignments.append((info, col))
+            col_heights[col] += height + VERTICAL_GAP
+            column_widths[col] = max(column_widths[col], width)
+
+        # Cada columna usa su propio ancho máximo para evitar solapamientos.
+        col_x: list[float] = []
+        current_x = float(CANVAS_MARGIN)
+        for col in range(columns):
+            col_x.append(current_x)
+            current_x += column_widths[col] + HORIZONTAL_GAP
+
+        col_heights = [CANVAS_MARGIN] * columns
+        max_right = 0.0
+        max_bottom = 0.0
+
+        for info, col in assignments:
+            width, height = sizes[info.qualname]
+            x = col_x[col]
+            y = col_heights[col]
             self.boxes[info.qualname] = {
-                "x": x, "y": y, "width": width, "height": height,
-                "id": self._id("class"), "boundElements": [],
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+                "id": self._id("class"),
+                "boundElements": [],
             }
-            col_heights[row_col] = y + height + VERTICAL_GAP
+            col_heights[col] = y + height + VERTICAL_GAP
             max_right = max(max_right, x + width)
             max_bottom = max(max_bottom, y + height)
 
@@ -935,7 +1005,10 @@ class ExcalidrawBuilder:
         lines.extend(self._field_display(f) for f in info.fields)
         lines.extend(self._method_display(m) for m in info.methods)
         longest = max((len(line) for line in lines), default=20)
-        return max(BOX_MIN_WIDTH, min(BOX_MAX_WIDTH, 2 * BODY_PADDING + longest * CHAR_WIDTH))
+
+        # El ancho se adapta al contenido real; no hay un máximo rígido.
+        # Esto evita que firmas largas, especialmente constructores Java, sobresalgan.
+        return max(BOX_MIN_WIDTH, 2 * BODY_PADDING + longest * CHAR_WIDTH)
 
     @staticmethod
     def _box_height(info: ClassInfo) -> float:
@@ -1146,7 +1219,8 @@ class ExcalidrawBuilder:
             modifiers.append("async")
         modifier_text = f"«{', '.join(modifiers)}» " if modifiers else ""
         params = ", ".join(method.parameters)
-        return f"{prefix} {modifier_text}{method.name}({params}): {method.return_type}"
+        signature = f"{prefix} {modifier_text}{method.name}({params})"
+        return f"{signature}: {method.return_type}" if method.return_type else signature
 
     def _base_element(
         self,
